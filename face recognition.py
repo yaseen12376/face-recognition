@@ -80,7 +80,6 @@ add_face('hasim', 3852, 'AI&DS', 'hasim.jpg')
 add_face('leo', 1743, 'AI&DS', 'leo.jpg')
 add_face('maida', 5612, 'AI&DS', 'maida.jpg')
 add_face('marofa', 8234, 'AI&DS', 'marofa.jpg')
-add_face('mizba', 9041, 'AI&DS', 'mizba.jpg')
 add_face('nizam', 6723, 'AI&DS', 'nizam.jpg')
 add_face('sabila', 3156, 'AI&DS', 'sabila.jpg')
 add_face('sandy', 7812, 'AI&DS', 'sandy.jpg')
@@ -122,7 +121,7 @@ def upload_and_recognize_image():
                 distances = [np.linalg.norm(face_embedding.detach().numpy() - encoding) for encoding, _, _, _ in known_face_encodings]
                 min_distance_index = np.argmin(distances)
                 name = "unknown"
-                if distances[min_distance_index] < 1.0:
+                if distances[min_distance_index] < 0.8:
                     name = known_face_encodings[min_distance_index][1]
                 x_min, y_min, x_max, y_max = boxes[i].tolist()
                 cv2.rectangle(img, (int(x_min), int(y_min)), (int(x_max), int(y_max)), (0, 0, 255), 2)

@@ -253,26 +253,42 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (captureBtn) {
-        captureBtn.addEventListener("click", () => {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext("2d").drawImage(video, 0, 0);
-            snapshotImg.src = canvas.toDataURL("image/png");
-            snapshotImg.style.display = "block";
-            processingStatus.innerHTML = Processing... <i class="fa-solid fa-brain fa-spin"></i>;
-            captureBtn.disabled = true;
-            setTimeout(() => {
-                const success = Math.random() > 0.2;
-                const randomStudent = students[Math.floor(Math.random() * students.length)];
-                if (success) {
-                    processingStatus.innerHTML = <span class="text-success">Success! ${randomStudent.name} identified.</span>;
-                    addAttendanceRecord(randomStudent.name, randomStudent.id, "Present");
+        captureBtn.addEventListener("click", async () => {
+            try {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext("2d").drawImage(video, 0, 0);
+                const imageDataUrl = canvas.toDataURL("image/png");
+                snapshotImg.src = imageDataUrl;
+                snapshotImg.style.display = "block";
+                processingStatus.innerHTML = `Processing... <i class="fa-solid fa-brain fa-spin"></i>`;
+                captureBtn.disabled = true;
+
+                // Send image to backend for recognition
+                const formData = new FormData();
+                formData.append('image_data', imageDataUrl);
+
+                const response = await fetch('/capture-attendance', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success && result.attendance_records.length > 0) {
+                    const student = result.attendance_records[0];
+                    processingStatus.innerHTML = `<span class="text-success">Success! ${student.name} identified.</span>`;
+                    addAttendanceRecord(student.name, student.rrn, "Present");
                 } else {
-                    processingStatus.innerHTML = <span class="text-danger">Recognition failed. Please try again.</span>;
+                    processingStatus.innerHTML = `<span class="text-danger">No faces recognized. Please try again.</span>`;
                     addAttendanceRecord("Unknown Student", "N/A", "Unrecognized");
                 }
+            } catch (error) {
+                console.error('Error:', error);
+                processingStatus.innerHTML = `<span class="text-danger">Error processing image. Please try again.</span>`;
+            } finally {
                 captureBtn.disabled = false;
-            }, 2000);
+            }
         });
     }
 
@@ -289,13 +305,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const newRow = document.createElement('tr');
         const statusClass = status === 'Present' ? 'bg-success' : 'bg-danger';
-        newRow.innerHTML = <td>${name}</td><td>${id}</td><td>${new Date().toLocaleTimeString()}</td><td><span class="badge ${statusClass}">${status}</span></td>;
+        newRow.innerHTML = `<td>${name}</td><td>${id}</td><td>${new Date().toLocaleTimeString()}</td><td><span class="badge ${statusClass}">${status}</span></td>`;
         attendanceLog.prepend(newRow);
     }
 
     window.logout = function() {
-        alert("Logged out successfully.");
-        window.location.href = "login.html"; 
+        fetch('/logout', { method: 'POST' })
+            .then(() => {
+                window.location.href = "/login";
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+                window.location.href = "/login";
+            });
     }
     
     // --- Navigation Logic ---

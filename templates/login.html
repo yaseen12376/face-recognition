@@ -111,19 +111,21 @@
       <p class="text-muted">Welcome back! Please login to your account.</p>
     </div>
 
-    <form id="loginForm">
+    <form id="loginForm" method="post" action="/login">
       <div class="form-floating mb-3">
-        <input type="email" class="form-control" id="inputEmail" placeholder="name@example.com" required>
+        <input type="email" class="form-control" id="inputEmail" name="email" placeholder="name@example.com" required>
         <label for="inputEmail">Email address</label>
       </div>
       <div class="form-floating mb-3">
-        <input type="password" class="form-control" id="inputPassword" placeholder="Password" required>
+        <input type="password" class="form-control" id="inputPassword" name="password" placeholder="Password" required>
         <label for="inputPassword">Password</label>
       </div>
 
       <div class="d-flex justify-content-end mb-3">
         <a href="#" class="forgot-password-link text-decoration-none">Forgot Password?</a>
       </div>
+
+      <div id="errorMessage" class="alert alert-danger" style="display: none;"></div>
 
       <div class="d-grid gap-2">
         <button type="submit" class="btn btn-primary btn-lg">Login</button>
@@ -149,14 +151,19 @@
       const loginForm = document.getElementById("loginForm");
       const signupLink = document.getElementById("signupLink");
 
-      loginForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-        window.location.href = "dashboard.html"; 
-      });
+      // Handle error message from server
+      const urlParams = new URLSearchParams(window.location.search);
+      const error = urlParams.get('error');
+      if (error) {
+        const errorDiv = document.getElementById('errorMessage');
+        errorDiv.textContent = error;
+        errorDiv.style.display = 'block';
+      }
 
       signupLink.addEventListener("click", (e) => {
         e.preventDefault();
-        window.location.href = "dashboard.html";
+        // For demo purposes, redirect to dashboard
+        window.location.href = "/dashboard";
       });
     });
   </script>
