@@ -13,127 +13,386 @@
 
   <style>
     :root {
-      --primary-color: #0d6efd;
-      --light-gray: #f8f9fa;
-      --body-bg: linear-gradient(135deg, #e6f2ff, #f0f8ff);
-      --card-shadow: 0 4px 25px rgba(0, 0, 0, 0.08);
-      --card-radius: 0.75rem;
+      --primary-color: #6366f1;
+      --secondary-color: #8b5cf6;
+      --accent-color: #06b6d4;
+      --success-color: #10b981;
+      --warning-color: #f59e0b;
+      --danger-color: #ef4444;
+      --dark-color: #1f2937;
+      --light-gray: #f8fafc;
+      --body-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --card-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      --card-radius: 1.5rem;
+      --glass-effect: rgba(255, 255, 255, 0.95);
+    }
+
+    * {
+      box-sizing: border-box;
     }
 
     body { 
-      background: var(--body-bg); 
-      font-family: 'Inter', sans-serif;
+      background: var(--body-bg);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
+      margin: 0;
+      padding: 1rem;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: 
+        radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
+      z-index: -1;
     }
 
     .login-card { 
       width: 100%;
-      max-width: 450px; 
-      padding: 2.5rem; 
+      max-width: 480px; 
+      padding: 3rem 2.5rem; 
       border-radius: var(--card-radius); 
       box-shadow: var(--card-shadow); 
-      background: #fff; 
-      border: 1px solid #e9ecef;
-      animation: fadeIn 0.5s ease-in-out;
+      background: var(--glass-effect);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+
+    .login-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary-color), var(--accent-color), var(--secondary-color));
+      border-radius: var(--card-radius) var(--card-radius) 0 0;
     }
     
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes slideUp {
+      from { 
+        opacity: 0; 
+        transform: translateY(30px) scale(0.95); 
+      }
+      to { 
+        opacity: 1; 
+        transform: translateY(0) scale(1); 
+      }
+    }
+
+    .brand-container {
+      text-align: center;
+      margin-bottom: 2.5rem;
+      position: relative;
+    }
+
+    .brand-icon-wrapper {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      margin-bottom: 1.5rem;
+      box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
+      position: relative;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    .brand-icon-wrapper::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-color), var(--accent-color), var(--secondary-color));
+      z-index: -1;
+      opacity: 0.5;
+      animation: rotate 3s linear infinite;
+    }
+
+    @keyframes rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     .brand-icon {
-      font-size: 1.5rem;
-      color: var(--primary-color);
+      font-size: 3.5rem;
+      color: white;
+      text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
 
     .brand-title {
-      font-weight: 700;
-      font-size: 1.75rem;
+      font-weight: 800;
+      font-size: 2.5rem;
+      background: linear-gradient(135deg, var(--dark-color), var(--primary-color));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+      line-height: 1.2;
+    }
+
+    .brand-subtitle {
+      color: #64748b;
+      font-size: 1.1rem;
+      font-weight: 500;
+      margin: 0;
+    }
+
+    .form-floating {
+      margin-bottom: 1.5rem;
+      position: relative;
     }
 
     .form-floating > .form-control {
-        height: calc(3.5rem + 2px);
-    }
-    .form-floating > label {
-        padding: 1rem 1.25rem;
+      height: calc(4rem + 2px);
+      padding: 1.5rem 1.25rem 0.75rem;
+      font-size: 1.1rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 1rem;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    .btn-lg {
-        padding: 0.8rem 1rem;
-        font-weight: 600;
+    .form-floating > .form-control:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+      background: rgba(255, 255, 255, 0.95);
+      transform: translateY(-2px);
+    }
+
+    .form-floating > label {
+      padding: 1.25rem 1.25rem 0.25rem;
+      font-weight: 600;
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      border: none;
+      padding: 1rem 2rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      border-radius: 1rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+      transition: left 0.5s;
+    }
+
+    .btn-primary:hover::before {
+      left: 100%;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+    }
+
+    .btn-outline-secondary {
+      border: 2px solid #e2e8f0;
+      color: #64748b;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      padding: 1rem 2rem;
+      font-weight: 600;
+      border-radius: 1rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-outline-secondary:hover {
+      background: #f8fafc;
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      transform: translateY(-2px);
     }
 
     .forgot-password-link {
-        font-size: 0.875rem;
+      color: var(--primary-color);
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .forgot-password-link:hover {
+      color: var(--secondary-color);
+      text-decoration: underline;
     }
 
     .separator {
       display: flex;
       align-items: center;
       text-align: center;
-      color: #6c757d;
-      margin: 1.5rem 0;
+      color: #94a3b8;
+      margin: 2rem 0;
+      font-weight: 600;
+      font-size: 1rem;
     }
+
     .separator::before,
     .separator::after {
       content: '';
       flex: 1;
-      border-bottom: 1px solid #dee2e6;
+      border-bottom: 2px solid #e2e8f0;
     }
+
     .separator:not(:empty)::before {
-      margin-right: .5em;
+      margin-right: 1rem;
     }
+
     .separator:not(:empty)::after {
-      margin-left: .5em;
+      margin-left: 1rem;
     }
 
     .btn-social {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.75rem;
-        border-color: #dee2e6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      border: 2px solid #e2e8f0;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      padding: 1rem 2rem;
+      font-weight: 600;
+      border-radius: 1rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
+
+    .btn-social:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+
     .btn-social img {
-        width: 20px;
+      width: 28px;
+      height: 28px;
+    }
+
+    .signup-link {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 1.1rem;
+    }
+
+    .signup-link a {
+      color: var(--primary-color);
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+
+    .signup-link a:hover {
+      color: var(--secondary-color);
+      text-decoration: underline;
+    }
+
+    .alert {
+      border-radius: 1rem;
+      border: none;
+      padding: 1rem 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+
+    .alert-danger {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+      color: var(--danger-color);
+      border-left: 4px solid var(--danger-color);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .login-card {
+        margin: 1rem;
+        padding: 2rem 1.5rem;
+      }
+
+      .brand-icon-wrapper {
+        width: 100px;
+        height: 100px;
+      }
+
+      .brand-icon {
+        font-size: 3rem;
+      }
+
+      .brand-title {
+        font-size: 2rem;
+      }
     }
   </style>
 </head>
 <body>
   <div class="login-card">
-    <div class="text-center mb-4">
-      <i class="fa-solid fa-clipboard-user brand-icon"></i>
-      <h3 class="brand-title mt-2">Smart Attendance System</h3>
-      <p class="text-muted">Welcome back! Please login to your account.</p>
+    <div class="brand-container">
+      <div class="brand-icon-wrapper">
+        <i class="fa-solid fa-user-graduate brand-icon"></i>
+      </div>
+      <h1 class="brand-title">Smart Attendance</h1>
+      <p class="brand-subtitle">AI-Powered Recognition System</p>
     </div>
 
     <form id="loginForm" method="post" action="/login">
-      <div class="form-floating mb-3">
+      <div class="form-floating">
         <input type="email" class="form-control" id="inputEmail" name="email" placeholder="name@example.com" required>
-        <label for="inputEmail">Email address</label>
+        <label for="inputEmail"><i class="fa-solid fa-envelope me-2"></i>Email address</label>
       </div>
-      <div class="form-floating mb-3">
+      <div class="form-floating">
         <input type="password" class="form-control" id="inputPassword" name="password" placeholder="Password" required>
-        <label for="inputPassword">Password</label>
+        <label for="inputPassword"><i class="fa-solid fa-lock me-2"></i>Password</label>
       </div>
 
       <div class="d-flex justify-content-end mb-3">
-        <a href="#" class="forgot-password-link text-decoration-none">Forgot Password?</a>
+        <a href="#" class="forgot-password-link">
+          <i class="fa-solid fa-key me-1"></i>Forgot Password?
+        </a>
       </div>
 
       <div id="errorMessage" class="alert alert-danger" style="display: none;"></div>
 
-      <div class="d-grid gap-2">
-        <button type="submit" class="btn btn-primary btn-lg">Login</button>
+      <div class="d-grid gap-3">
+        <button type="submit" class="btn btn-primary btn-lg">
+          <i class="fa-solid fa-sign-in-alt me-2"></i>Sign In
+        </button>
       </div>
 
       <div class="separator">OR</div>
 
-      <div class="d-grid gap-2">
+      <div class="d-grid">
         <button type="button" class="btn btn-outline-secondary btn-lg btn-social">
           <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google logo">
           Continue with Google
@@ -141,9 +400,9 @@
       </div>
     </form>
 
-    <p class="text-center mt-4 text-muted">
-      Don't have an account? <a href="#" id="signupLink" class="fw-medium text-decoration-none">Sign up</a>
-    </p>
+    <div class="signup-link">
+      Don't have an account? <a href="#" id="signupLink">Create Account</a>
+    </div>
   </div>
 
   <script>
