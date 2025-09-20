@@ -201,7 +201,7 @@ def recognize_face_from_image(image_array):
                     
                     if distances:
                         min_distance_index = np.argmin(distances)
-                        if distances[min_distance_index] < 0.8:
+                        if distances[min_distance_index] < 0.9:
                             _, name, rrn, branch = known_face_encodings[min_distance_index]
                             results.append({
                                 "name": name,
