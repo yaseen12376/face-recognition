@@ -7,7 +7,8 @@ import cv2
 import numpy as np
 import csv
 import time
-from facenet_pytorch import MTCNN, InceptionResnetV1
+import insightface
+from insightface.app import FaceAnalysis
 import torch
 import os
 import io
@@ -22,6 +23,25 @@ from jose import JWTError, jwt
 # Initialize FastAPI app
 app = FastAPI(title="Smart Attendance System", description="Face Recognition based Attendance System")
 
+# Image quality configuration for RetinaFace + ArcFace
+class ImageConfig:
+    # Face detection thresholds - RetinaFace works better with different thresholds
+    MIN_FACE_SIZE = 30  # Minimum face size in pixels
+    RETINAFACE_THRESHOLD = 0.7  # RetinaFace detection threshold
+    ARCFACE_SIMILARITY_THRESHOLD = 0.4  # ArcFace cosine similarity threshold
+    
+    # Image enhancement settings
+    SHARPNESS_FACTOR = 1.5  # Reduced from 2.0 as ArcFace is more robust
+    CONTRAST_FACTOR = 1.2   # Reduced from 1.3
+    BRIGHTNESS_FACTOR = 1.1 # Slight brightness boost
+    
+    # Advanced processing settings
+    NOISE_REDUCTION = True
+    HISTOGRAM_EQUALIZATION = True
+    ADAPTIVE_THRESHOLD = True
+    FACE_ALIGNMENT = True  # Enable proper face alignment
+    STANDARD_FACE_SIZE = (112, 112)  # ArcFace standard input size
+
 # Security
 SECRET_KEY = "your-secret-key-here"  # Change this in production
 ALGORITHM = "HS256"
@@ -34,9 +54,16 @@ security = HTTPBearer()
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Initialize MTCNN (face detector) and Inception Resnet V1 (for face recognition)
-mtcnn = MTCNN(keep_all=True)
-inception = InceptionResnetV1(pretrained='vggface2').eval()
+# Initialize RetinaFace and ArcFace models
+print("Initializing RetinaFace and ArcFace models...")
+try:
+    # Initialize Face Analysis app with ArcFace model (MobileFaceNet backbone)
+    face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
+    face_app.prepare(ctx_id=0, det_size=(640, 640))
+    print("✓ ArcFace model initialized successfully")
+except Exception as e:
+    print(f"Error initializing ArcFace: {e}")
+    face_app = None
 
 # Global variables for face recognition
 known_face_encodings = []
@@ -55,24 +82,35 @@ class Face:
 
     def face_upload(self):
         try:
-            # Load the image and extract face embeddings
+            # Load the image using OpenCV
             img = cv2.imread(self.image)
             if img is None:
                 print(f"Image not found: {self.image}")
                 return False
             
-            # Convert BGR to RGB (OpenCV loads images in BGR format)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            faces = mtcnn(img)  # Detect faces in the image
-            if faces is not None:
-                for face in faces:
-                    # Ensure the image is in the right format for InceptionResnetV1
-                    face_embedding = inception(face.unsqueeze(0))  # Add batch dimension
-                    # Return face encoding and the person's details (name, rrn, branch)
-                    return face_embedding.detach().numpy(), self.name, self.rrn, self.branch
-            return None
+            # Convert BGR to RGB for RetinaFace
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            # Use ArcFace (InsightFace) for face detection and embedding
+            if face_app is None:
+                print("Face analysis app not initialized")
+                return False
+                
+            faces = face_app.get(img_rgb)
+            
+            if faces and len(faces) > 0:
+                # Get the first (most confident) face
+                face = faces[0]
+                face_embedding = face.embedding  # ArcFace embedding
+                
+                # Return face encoding and the person's details
+                return face_embedding, self.name, self.rrn, self.branch
+            else:
+                print(f"No faces detected in {self.image}")
+                return None
+                
         except Exception as e:
-            print(f"Error loading image: {e}")
+            print(f"Error loading image {self.image}: {e}")
             return None
 
 def add_face(name, rrn, branch, image_path):
@@ -177,51 +215,160 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise credentials_exception
     return user
 
-def recognize_face_from_image(image_array):
-    """Recognize faces in the given image array"""
+def detect_and_align_faces(image_array):
+    """Detect and align faces using InsightFace (which includes RetinaFace detection)"""
     try:
-        # Convert to RGB if it's BGR
+        # Convert to RGB if needed
         if len(image_array.shape) == 3 and image_array.shape[2] == 3:
-            rgb_img = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
+            rgb_img = image_array
         else:
             rgb_img = image_array
             
-        # Detect faces
-        boxes, probs = mtcnn.detect(rgb_img)
-        faces = mtcnn(rgb_img)
+        # Use InsightFace for detection and alignment (includes RetinaFace detector)
+        if face_app is None:
+            print("Face analysis app not initialized")
+            return []
+            
+        faces = face_app.get(rgb_img)
+        
+        faces_info = []
+        if faces:
+            for face in faces:
+                # Convert bbox format from InsightFace
+                bbox = face.bbox.astype(int)  # [x1, y1, x2, y2]
+                confidence = face.det_score
+                landmarks = face.kps if hasattr(face, 'kps') else None
+                
+                # Extract aligned face (InsightFace already provides aligned faces)
+                aligned_face = rgb_img[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+                
+                # Resize to standard size for consistent processing
+                if aligned_face.shape[0] > 0 and aligned_face.shape[1] > 0:
+                    aligned_face = cv2.resize(aligned_face, ImageConfig.STANDARD_FACE_SIZE)
+                
+                faces_info.append({
+                    'aligned_face': aligned_face,
+                    'bbox': bbox.tolist(),
+                    'confidence': float(confidence),
+                    'landmarks': landmarks.tolist() if landmarks is not None else None,
+                    'embedding': face.embedding  # Pre-computed ArcFace embedding
+                })
+        
+        return faces_info
+    except Exception as e:
+        print(f"Error in InsightFace detection: {e}")
+        return []
+
+def align_face_with_landmarks(image, landmarks, bbox):
+    """Align face using facial landmarks"""
+    try:
+        # Simple face extraction for now - can be enhanced with proper alignment
+        x1, y1, x2, y2 = bbox
+        face_img = image[y1:y2, x1:x2]
+        
+        # Resize to standard size for consistent processing
+        if face_img.shape[0] > 0 and face_img.shape[1] > 0:
+            face_img = cv2.resize(face_img, ImageConfig.STANDARD_FACE_SIZE)  # Standard size for ArcFace
+        
+        return face_img
+    except Exception as e:
+        print(f"Error in face alignment: {e}")
+        return None
+
+def get_arcface_embedding(face_image):
+    """Generate ArcFace embedding for a face image"""
+    try:
+        if face_app is None:
+            print("Face analysis app not initialized")
+            return None
+            
+        # Use InsightFace to get embedding
+        faces = face_app.get(face_image)
+        if faces and len(faces) > 0:
+            return faces[0].embedding
+        else:
+            print("No face detected in the provided image")
+            return None
+    except Exception as e:
+        print(f"Error generating ArcFace embedding: {e}")
+        return None
+
+def recognize_face_from_image(image_array):
+    """Advanced face recognition using RetinaFace detection and ArcFace embeddings"""
+    try:
+        # Convert to RGB if needed
+        if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+            rgb_img = image_array
+        else:
+            rgb_img = image_array
+            
+        # Use RetinaFace for face detection and alignment
+        faces_info = detect_and_align_faces(rgb_img)
         
         results = []
         
-        if boxes is not None and faces is not None:
-            for i, face in enumerate(faces):
-                if face is not None:
-                    face_embedding = inception(face.unsqueeze(0))
-                    distances = [np.linalg.norm(face_embedding.detach().numpy() - encoding) 
-                               for encoding, _, _, _ in known_face_encodings]
-                    
-                    if distances:
-                        min_distance_index = np.argmin(distances)
-                        if distances[min_distance_index] < 0.9:
-                            _, name, rrn, branch = known_face_encodings[min_distance_index]
-                            results.append({
-                                "name": name,
-                                "rrn": rrn,
-                                "branch": branch,
-                                "confidence": 1 - distances[min_distance_index],
-                                "box": boxes[i].tolist()
-                            })
+        if faces_info:
+            for i, face_info in enumerate(faces_info):
+                try:
+                    # Get ArcFace embedding
+                    if 'embedding' in face_info:
+                        # Use pre-computed embedding from InsightFace fallback
+                        face_embedding = face_info['embedding']
+                    else:
+                        # Generate embedding using ArcFace
+                        aligned_face = face_info['aligned_face']
+                        if aligned_face is not None:
+                            face_embedding = get_arcface_embedding(aligned_face)
                         else:
-                            results.append({
-                                "name": "unknown",
-                                "rrn": None,
-                                "branch": None,
-                                "confidence": 0,
-                                "box": boxes[i].tolist()
-                            })
+                            continue
+                    
+                    if face_embedding is not None:
+                        # Calculate cosine similarities with known faces (better for ArcFace)
+                        similarities = []
+                        for encoding, _, _, _ in known_face_encodings:
+                            # Cosine similarity for ArcFace embeddings
+                            similarity = np.dot(face_embedding, encoding) / (
+                                np.linalg.norm(face_embedding) * np.linalg.norm(encoding)
+                            )
+                            similarities.append(similarity)
+                        
+                        if similarities:
+                            max_similarity_index = np.argmax(similarities)
+                            max_similarity = similarities[max_similarity_index]
+                            
+                            # ArcFace uses cosine similarity, higher is better (threshold ~0.3-0.6)
+                            if max_similarity > ImageConfig.ARCFACE_SIMILARITY_THRESHOLD:  # Threshold for ArcFace recognition
+                                _, name, rrn, branch = known_face_encodings[max_similarity_index]
+                                confidence = max_similarity  # Similarity as confidence
+                                
+                                results.append({
+                                    "name": name,
+                                    "rrn": rrn,
+                                    "branch": branch,
+                                    "confidence": float(confidence),
+                                    "box": face_info['bbox'],
+                                    "detection_confidence": float(face_info['confidence']),
+                                    "similarity": float(max_similarity),
+                                    "quality_assessment": "good" if face_info['confidence'] > 0.8 else "acceptable"
+                                })
+                            else:
+                                results.append({
+                                    "name": "unknown",
+                                    "rrn": None,
+                                    "branch": None,
+                                    "confidence": 0,
+                                    "box": face_info['bbox'],
+                                    "detection_confidence": float(face_info['confidence']),
+                                    "similarity": float(max_similarity),
+                                    "quality_assessment": "unknown_person"
+                                })
+                except Exception as face_err:
+                    print(f"Error processing face {i}: {face_err}")
+                    continue
         
         return results
     except Exception as e:
-        print(f"Error in face recognition: {e}")
+        print(f"Error in RetinaFace + ArcFace recognition: {e}")
         return []
 
 # Initialize known faces when app starts
