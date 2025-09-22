@@ -830,7 +830,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function startStream() {
         try {
-            currentStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            // Try to use back camera first, fallback to any camera if not available
+            let constraints = { video: { facingMode: 'environment' } };
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+                // Fallback to any available camera if back camera is not available
+                constraints = { video: true };
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            }
             video.srcObject = currentStream;
             toggleStreamBtn.innerHTML = '<i class="fa-solid fa-power-off"></i>';
             captureBtn.disabled = false;
