@@ -511,14 +511,16 @@ async def capture_attendance(request: Request, image_data: str = Form(...)):
         current_date = datetime.now().strftime("%Y-%m-%d")
         
         for result in results:
-            if result["name"] != "unknown":
+            if result["name"] not in ["unknown", "low_quality_detection", "low_confidence"]:
                 attendance_record = {
                     "name": result["name"],
                     "rrn": result["rrn"],
                     "branch": result["branch"],
                     "time": current_time,
                     "date": current_date,
-                    "status": "Present"
+                    "status": "Present",
+                    "confidence": result.get("confidence", 0.8),  # Include confidence score
+                    "detection_confidence": result.get("detection_confidence", 0.8)
                 }
                 attendance_records.append(attendance_record)
                 

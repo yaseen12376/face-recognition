@@ -639,6 +639,12 @@ canvas {
                                     </div>
                                     
                                     <div id="processingStatus" class="text-center mb-3"></div>
+                                    <div id="faceCounterDisplay" class="text-center mb-2" style="display: none;">
+                                        <small class="text-muted">
+                                            <i class="fa-solid fa-users me-1"></i>
+                                            <span id="faceCounter">0</span> face(s) detected
+                                        </small>
+                                    </div>
                                     <img id="snapshotImg" style="display: none;">
                                 </div>
                             </div>
@@ -817,6 +823,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const toggleStreamBtn = document.getElementById("toggleStreamBtn");
     const attendanceLog = document.getElementById("attendanceLog");
     const processingStatus = document.getElementById("processingStatus");
+    const faceCounterDisplay = document.getElementById("faceCounterDisplay");
+    const faceCounter = document.getElementById("faceCounter");
     let currentStream = null;
     let hasLogged = false;
 
@@ -864,12 +872,81 @@ document.addEventListener('DOMContentLoaded', function() {
                 const result = await response.json();
                 
                 if (result.success && result.attendance_records.length > 0) {
-                    const student = result.attendance_records[0];
-                    processingStatus.innerHTML = `<span class="text-success"><i class="fa-solid fa-check-circle me-2"></i>Success! ${student.name} identified.</span>`;
-                    addAttendanceRecord(student.name, student.rrn, "Present");
+                    // Show face counter
+                    faceCounter.textContent = result.attendance_records.length;
+                    faceCounterDisplay.style.display = 'block';
+                    
+                    // Handle multiple faces detected
+                    let statusMessage = '';
+                    let detectedNames = [];
+                    
+                    if (result.attendance_records.length === 1) {
+                        // Single face detected
+                        const student = result.attendance_records[0];
+                        const confidence = Math.round((student.confidence || 0.8) * 100);
+                        statusMessage = `<i class="fa-solid fa-check-circle me-2"></i>Success! ${student.name} identified (${confidence}% confidence).`;
+                        detectedNames.push(student.name);
+                    } else {
+                        // Multiple faces detected
+                        statusMessage = `<i class="fa-solid fa-users me-2"></i>Success! ${result.attendance_records.length} students identified: `;
+                        const names = result.attendance_records.map(student => student.name);
+                        statusMessage += names.join(', ');
+                        detectedNames = names;
+                    }
+                    
+                    processingStatus.innerHTML = `<span class="text-success">${statusMessage}</span>`;
+                    
+                    // Add all detected students to attendance log
+                    result.attendance_records.forEach(student => {
+                        addAttendanceRecord(student.name, student.rrn, "Present", student.confidence);
+                    });
+                    
+                    // Show summary notification
+                    if (result.attendance_records.length > 1) {
+                        setTimeout(() => {
+                            processingStatus.innerHTML = `<span class="text-info"><i class="fa-solid fa-info-circle me-2"></i>Attendance marked for ${result.attendance_records.length} students.</span>`;
+                        }, 3000);
+                    }
                 } else {
-                    processingStatus.innerHTML = `<span class="text-danger"><i class="fa-solid fa-exclamation-triangle me-2"></i>No faces recognized. Please try again.</span>`;
-                    addAttendanceRecord("Unknown Student", "N/A", "Unrecognized");
+                    // Hide face counter for failed detections
+                    faceCounterDisplay.style.display = 'none';
+                    // Handle cases with no recognized faces or errors
+                    let errorMessage = '';
+                    let suggestion = '';
+                    
+                    if (result.results && result.results.length > 0) {
+                        const failedResult = result.results[0];
+                        
+                        if (failedResult.name === 'low_quality_detection') {
+                            if (failedResult.quality_assessment === 'poor_lighting') {
+                                errorMessage = 'Face(s) detected but image quality is poor.';
+                                suggestion = 'Try improving lighting or removing shadows.';
+                            } else if (failedResult.quality_assessment === 'too_distant') {
+                                errorMessage = 'Face(s) detected but too far away.';
+                                suggestion = 'Please move closer to the camera and try again.';
+                            } else {
+                                errorMessage = 'Face(s) detected but quality needs improvement.';
+                                suggestion = failedResult.suggestion || 'Try better lighting and move closer.';
+                            }
+                        } else if (failedResult.name === 'unknown') {
+                            errorMessage = 'Face(s) detected but not recognized.';
+                            suggestion = 'Make sure all students are registered in the system.';
+                        } else {
+                            errorMessage = 'Face(s) detected but recognition failed.';
+                            suggestion = 'Try again with better lighting and positioning.';
+                        }
+                    } else {
+                        errorMessage = 'No faces detected in the image.';
+                        suggestion = 'Make sure faces are clearly visible and well-lit.';
+                    }
+                    
+                    processingStatus.innerHTML = `
+                        <span class="text-warning">
+                            <i class="fa-solid fa-exclamation-triangle me-2"></i>${errorMessage}
+                            <br><small class="text-muted mt-1">${suggestion}</small>
+                        </span>
+                    `;
+                    addAttendanceRecord("Recognition Failed", "N/A", "Try Again");
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -886,15 +963,34 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    function addAttendanceRecord(name, id, status) {
+    function addAttendanceRecord(name, id, status, confidence) {
         if (!hasLogged) {
             attendanceLog.innerHTML = '';
             hasLogged = true;
         }
         const newRow = document.createElement('tr');
-        const statusClass = status === 'Present' ? 'bg-success' : 'bg-danger';
-        newRow.innerHTML = `<td>${name}</td><td>${id}</td><td>${new Date().toLocaleTimeString()}</td><td><span class="badge ${statusClass}">${status}</span></td>`;
+        const statusClass = status === 'Present' ? 'bg-success' : status === 'Try Again' ? 'bg-warning' : 'bg-danger';
+        
+        // Add confidence score if available
+        let confidenceDisplay = '';
+        if (confidence && status === 'Present') {
+            const confidencePercent = Math.round(confidence * 100);
+            confidenceDisplay = ` <small class="text-muted">(${confidencePercent}%)</small>`;
+        }
+        
+        newRow.innerHTML = `
+            <td>${name}${confidenceDisplay}</td>
+            <td>${id}</td>
+            <td>${new Date().toLocaleTimeString()}</td>
+            <td><span class="badge ${statusClass}">${status}</span></td>
+        `;
         attendanceLog.prepend(newRow);
+        
+        // Add a slight highlight animation for new entries
+        newRow.style.backgroundColor = '#f8f9fa';
+        setTimeout(() => {
+            newRow.style.backgroundColor = '';
+        }, 2000);
     }
 
     window.logout = function() {
