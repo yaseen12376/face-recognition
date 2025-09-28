@@ -3,25 +3,29 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pathlib import Path
+from typing import Optional, List
+
+import base64
+import csv
+import json
+from datetime import datetime, timedelta
+
 import cv2
 import numpy as np
-import csv
-import time
-import insightface
 from insightface.app import FaceAnalysis
-import torch
-import os
-import io
-from datetime import datetime, timedelta
-from typing import Optional, List
-import base64
-from PIL import Image
-import json
-from passlib.context import CryptContext
 from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel, Field
 
 # Initialize FastAPI app
 app = FastAPI(title="Smart Attendance System", description="Face Recognition based Attendance System")
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+STUDENTS_FILE = DATA_DIR / "students.json"
+ATTENDANCE_FILE = DATA_DIR / "attendance.csv"
 
 # Image quality configuration for RetinaFace + ArcFace
 class ImageConfig:
@@ -41,6 +45,110 @@ class ImageConfig:
     ADAPTIVE_THRESHOLD = True
     FACE_ALIGNMENT = True  # Enable proper face alignment
     STANDARD_FACE_SIZE = (112, 112)  # ArcFace standard input size
+
+
+DEFAULT_STUDENTS = [
+    {"name": "yaseen", "rrn": 1170, "branch": "AI&DS", "image": "yaseen.jpg"},
+    {"name": "naveed", "rrn": 1152, "branch": "AI&DS", "image": "naveed.jpg"},
+    {"name": "hameed", "rrn": 1145, "branch": "AI&DS", "image": "hameed.jpg"},
+    {"name": "vikinesh", "rrn": 1146, "branch": "AI&DS", "image": "viki.jpg"},
+    {"name": "chatu", "rrn": 2381, "branch": "AI&DS", "image": "chatu.jpg"},
+    {"name": "faaz", "rrn": 4927, "branch": "AI&DS", "image": "faaz.jpg"},
+    {"name": "hasim", "rrn": 3852, "branch": "AI&DS", "image": "hasim.jpg"},
+    {"name": "leo", "rrn": 1743, "branch": "AI&DS", "image": "leo.jpg"},
+    {"name": "maida", "rrn": 5612, "branch": "AI&DS", "image": "maida.jpg"},
+    {"name": "marofa", "rrn": 8234, "branch": "AI&DS", "image": "marofa.jpg"},
+    {"name": "nizam", "rrn": 6723, "branch": "AI&DS", "image": "nizam.jpg"},
+    {"name": "sabila", "rrn": 3156, "branch": "AI&DS", "image": "sabila.jpg"},
+    {"name": "sandy", "rrn": 7812, "branch": "AI&DS", "image": "sandy.jpg"},
+    {"name": "shabaz", "rrn": 4590, "branch": "AI&DS", "image": "shabaz.jpg"},
+    {"name": "shameer69", "rrn": 6901, "branch": "AI&DS", "image": "shameer69.jpg"},
+    {"name": "sheik_vili", "rrn": 8420, "branch": "AI&DS", "image": "sheik_vili.jpg"},
+    {"name": "stefina", "rrn": 1204, "branch": "AI&DS", "image": "stefina.jpg"},
+    {"name": "suthika", "rrn": 2345, "branch": "AI&DS", "image": "suthika.jpg"},
+    {"name": "swathy", "rrn": 5678, "branch": "AI&DS", "image": "swathy.jpg"},
+    {"name": "tawheed", "rrn": 8765, "branch": "AI&DS", "image": "tawheed.jpg"},
+    {"name": "vanathi", "rrn": 4321, "branch": "AI&DS", "image": "vanathi.jpg"},
+    {"name": "viswa", "rrn": 3456, "branch": "AI&DS", "image": "viswa.jpg"},
+    {"name": "zarah", "rrn": 9876, "branch": "AI&DS", "image": "zarah.jpg"}
+]
+
+
+class AttendanceRecord(BaseModel):
+    name: str
+    rrn: int
+    branch: str
+    time: str
+    date: str
+    status: str = "Present"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    detection_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+    @property
+    def unique_key(self) -> str:
+        return f"{self.name}_{self.date}"
+
+
+class AttendanceStore:
+    def __init__(self, csv_path: Path):
+        self.csv_path = csv_path
+        self.records: dict[str, AttendanceRecord] = {}
+        self._load_existing()
+
+    def _load_existing(self) -> None:
+        if not self.csv_path.exists():
+            return
+
+        try:
+            with self.csv_path.open(newline="", mode="r", encoding="utf-8") as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    try:
+                        record = AttendanceRecord(**row)
+                        self.records[record.unique_key] = record
+                    except Exception as exc:
+                        print(f"Skipping invalid attendance row {row}: {exc}")
+        except Exception as exc:
+            print(f"Error loading attendance history: {exc}")
+
+    def _append_csv(self, record: AttendanceRecord) -> None:
+        file_exists = self.csv_path.exists()
+        with self.csv_path.open(mode="a", newline="", encoding="utf-8") as csvfile:
+            fieldnames = list(record.dict().keys())
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(record.dict())
+
+    def add(self, record: AttendanceRecord) -> bool:
+        if record.unique_key in self.records:
+            return False
+
+        self.records[record.unique_key] = record
+        self._append_csv(record)
+        return True
+
+    def list_records(self) -> List[dict]:
+        return [record.dict() for record in self.records.values()]
+
+
+def load_student_roster() -> List[dict]:
+    if STUDENTS_FILE.exists():
+        try:
+            with STUDENTS_FILE.open("r", encoding="utf-8") as fp:
+                data = json.load(fp)
+                if isinstance(data, list):
+                    return data
+        except Exception as exc:
+            print(f"Error reading {STUDENTS_FILE}: {exc}")
+    else:
+        try:
+            with STUDENTS_FILE.open("w", encoding="utf-8") as fp:
+                json.dump(DEFAULT_STUDENTS, fp, indent=2)
+                return DEFAULT_STUDENTS
+        except Exception as exc:
+            print(f"Unable to create {STUDENTS_FILE}: {exc}")
+    return DEFAULT_STUDENTS
 
 # Security
 SECRET_KEY = "your-secret-key-here"  # Change this in production
@@ -67,8 +175,7 @@ except Exception as e:
 
 # Global variables for face recognition
 known_face_encodings = []
-attendance_data = {}
-detected_names = []
+attendance_store = AttendanceStore(ATTENDANCE_FILE)
 
 class Face:
     def __init__(self, name, rrn, branch, image):
@@ -129,34 +236,14 @@ def add_face(name, rrn, branch, image_path):
 
 def initialize_known_faces():
     """Initialize all known faces from the image files"""
-    face_data = [
-        ('yaseen', 1170, 'AI&DS', 'yaseen.jpg'),
-        ('naveed', 1152, 'AI&DS', 'naveed.jpg'),
-        ('hameed', 1145, 'AI&DS', 'hameed.jpg'),
-        ('vikinesh', 1146, 'AI&DS', 'viki.jpg'),
-        ('chatu', 2381, 'AI&DS', 'chatu.jpg'),
-        ('faaz', 4927, 'AI&DS', 'faaz.jpg'),
-        ('hasim', 3852, 'AI&DS', 'hasim.jpg'),
-        ('leo', 1743, 'AI&DS', 'leo.jpg'),
-        ('maida', 5612, 'AI&DS', 'maida.jpg'),
-        ('marofa', 8234, 'AI&DS', 'marofa.jpg'),
-        ('nizam', 6723, 'AI&DS', 'nizam.jpg'),
-        ('sabila', 3156, 'AI&DS', 'sabila.jpg'),
-        ('sandy', 7812, 'AI&DS', 'sandy.jpg'),
-        ('shabaz', 4590, 'AI&DS', 'shabaz.jpg'),
-        ('shameer69', 6901, 'AI&DS', 'shameer69.jpg'),
-        ('sheik_vili', 8420, 'AI&DS', 'sheik_vili.jpg'),
-        ('stefina', 1204, 'AI&DS', 'stefina.jpg'),
-        ('suthika', 2345, 'AI&DS', 'suthika.jpg'),
-        ('swathy', 5678, 'AI&DS', 'swathy.jpg'),
-        ('tawheed', 8765, 'AI&DS', 'tawheed.jpg'),
-        ('vanathi', 4321, 'AI&DS', 'vanathi.jpg'),
-        ('viswa', 3456, 'AI&DS', 'viswa.jpg'),
-        ('zarah', 9876, 'AI&DS', 'zarah.jpg')
-    ]
-    
-    for name, rrn, branch, image_path in face_data:
-        add_face(name, rrn, branch, image_path)
+    known_face_encodings.clear()
+    student_roster = load_student_roster()
+
+    for student in student_roster:
+        try:
+            add_face(student["name"], student["rrn"], student["branch"], student["image"])
+        except KeyError as exc:
+            print(f"Student entry missing field {exc}: {student}")
 
 # Dummy user database (replace with real database in production)
 fake_users_db = {
@@ -461,21 +548,21 @@ async def recognize_face(request: Request, image: UploadFile = File(...)):
         
         for result in results:
             if result["name"] != "unknown":
-                attendance_record = {
-                    "name": result["name"],
-                    "rrn": result["rrn"],
-                    "branch": result["branch"],
-                    "time": current_time,
-                    "date": current_date,
-                    "status": "Present",
-                    "confidence": result["confidence"]
-                }
-                attendance_records.append(attendance_record)
-                
-                # Store in global attendance data
-                key = f"{result['name']}_{current_date}"
-                if key not in attendance_data:
-                    attendance_data[key] = attendance_record
+                record_model = AttendanceRecord(
+                    name=result["name"],
+                    rrn=result["rrn"],
+                    branch=result["branch"],
+                    time=current_time,
+                    date=current_date,
+                    status="Present",
+                    confidence=float(result.get("confidence", 0.0)),
+                    detection_confidence=float(result.get("detection_confidence", 0.0)) if result.get("detection_confidence") is not None else None,
+                )
+                was_added = attendance_store.add(record_model)
+                attendance_records.append({
+                    **record_model.dict(),
+                    "already_recorded": not was_added
+                })
         
         return JSONResponse({
             "success": True,
@@ -512,22 +599,21 @@ async def capture_attendance(request: Request, image_data: str = Form(...)):
         
         for result in results:
             if result["name"] not in ["unknown", "low_quality_detection", "low_confidence"]:
-                attendance_record = {
-                    "name": result["name"],
-                    "rrn": result["rrn"],
-                    "branch": result["branch"],
-                    "time": current_time,
-                    "date": current_date,
-                    "status": "Present",
-                    "confidence": result.get("confidence", 0.8),  # Include confidence score
-                    "detection_confidence": result.get("detection_confidence", 0.8)
-                }
-                attendance_records.append(attendance_record)
-                
-                # Store in global attendance data
-                key = f"{result['name']}_{current_date}"
-                if key not in attendance_data:
-                    attendance_data[key] = attendance_record
+                record_model = AttendanceRecord(
+                    name=result["name"],
+                    rrn=result["rrn"],
+                    branch=result["branch"],
+                    time=current_time,
+                    date=current_date,
+                    status="Present",
+                    confidence=float(result.get("confidence", 0.8)),
+                    detection_confidence=float(result.get("detection_confidence", 0.8)) if result.get("detection_confidence") is not None else None,
+                )
+                was_added = attendance_store.add(record_model)
+                attendance_records.append({
+                    **record_model.dict(),
+                    "already_recorded": not was_added
+                })
         
         return JSONResponse({
             "success": True,
@@ -547,7 +633,7 @@ async def get_attendance(request: Request):
     
     return JSONResponse({
         "success": True,
-        "attendance": list(attendance_data.values())
+        "attendance": attendance_store.list_records()
     })
 
 @app.get("/students")

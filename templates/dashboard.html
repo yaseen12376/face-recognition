@@ -825,6 +825,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const processingStatus = document.getElementById("processingStatus");
     const faceCounterDisplay = document.getElementById("faceCounterDisplay");
     const faceCounter = document.getElementById("faceCounter");
+    let isVideoMirrored = false;
     let currentStream = null;
     let hasLogged = false;
 
@@ -840,6 +841,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             }
             video.srcObject = currentStream;
+            const [videoTrack] = currentStream.getVideoTracks();
+            const settings = videoTrack ? videoTrack.getSettings() : {};
+            const label = videoTrack && videoTrack.label ? videoTrack.label.toLowerCase() : "";
+            isVideoMirrored = settings.facingMode === 'user' || /front|user|selfie/.test(label);
+            video.style.transform = isVideoMirrored ? "scaleX(-1)" : "scaleX(1)";
             toggleStreamBtn.innerHTML = '<i class="fa-solid fa-power-off"></i>';
             captureBtn.disabled = false;
         } catch (err) {
@@ -851,6 +857,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (currentStream) {
             currentStream.getTracks().forEach(t => t.stop());
             video.srcObject = null;
+            video.style.transform = "scaleX(1)";
             toggleStreamBtn.innerHTML = '<i class="fa-solid fa-video"></i>';
             captureBtn.disabled = true;
         }
@@ -861,7 +868,16 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
-                canvas.getContext("2d").drawImage(video, 0, 0);
+                const ctx = canvas.getContext("2d");
+                ctx.save();
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (isVideoMirrored) {
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+                } else {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                }
+                ctx.restore();
                 const imageDataUrl = canvas.toDataURL("image/png");
                 snapshotImg.src = imageDataUrl;
                 snapshotImg.style.display = "block";
